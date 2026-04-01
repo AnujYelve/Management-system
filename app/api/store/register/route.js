@@ -10,22 +10,22 @@ import { uploadImage, isConfigured } from '@/lib/cloudinary.js';
 export async function POST(request) {
   try {
     const authResult = await authenticate(request, ['STORE']);
-    
+
     if (authResult.error) {
       return NextResponse.json(
         { error: authResult.error },
         { status: authResult.status }
       );
     }
-    
+
     await connectDB();
-    
+
     // Parse form data (supports both JSON and multipart/form-data)
     let storeName, address, city, storeImage, timings, isOpenToday;
     let imageFile = null;
 
     const contentType = request.headers.get('content-type') || '';
-    
+
     if (contentType.includes('multipart/form-data')) {
       const { fields, files } = await parseFormData(request);
       storeName = fields.storeName;
@@ -45,27 +45,27 @@ export async function POST(request) {
       timings = body.timings;
       isOpenToday = body.isOpenToday;
     }
-    
+
     if (!storeName || !address || !city) {
       return NextResponse.json(
         { error: 'Store name, address, and city are required' },
         { status: 400 }
       );
     }
-    
+
     // Check if store already exists for this owner
     const existingStore = await Store.findOne({ ownerId: authResult.user._id });
-    
+
     if (existingStore) {
       return NextResponse.json(
         { error: 'Store already registered for this account' },
         { status: 400 }
       );
     }
-    
+
     // Handle image upload if file is provided
     let imageUrl = storeImage || '';
-    
+
     if (imageFile) {
       // Validate file type
       const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -75,7 +75,7 @@ export async function POST(request) {
           { status: 400 }
         );
       }
-      
+
       // Validate file size (max 5MB)
       const maxSize = 5 * 1024 * 1024; // 5MB
       if (imageFile.size > maxSize) {
@@ -84,7 +84,7 @@ export async function POST(request) {
           { status: 400 }
         );
       }
-      
+
       // Upload to Cloudinary if configured
       if (isConfigured()) {
         try {
@@ -105,7 +105,7 @@ export async function POST(request) {
         );
       }
     }
-    
+
     const store = await Store.create({
       ownerId: authResult.user._id,
       storeName,
@@ -115,10 +115,10 @@ export async function POST(request) {
       timings: timings || '9:00 AM - 6:00 PM',
       isOpenToday: isOpenToday !== undefined ? isOpenToday : true
     });
-    
+
     const populatedStore = await Store.findById(store._id)
       .populate('ownerId', 'name email username');
-    
+
     return NextResponse.json({
       message: 'Store registered successfully',
       store: populatedStore

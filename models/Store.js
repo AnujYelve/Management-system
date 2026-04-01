@@ -32,10 +32,23 @@ const storeSchema = new mongoose.Schema({
   isOpenToday: {
     type: Boolean,
     default: true
+  },
+  location: {
+    type: {
+      type: String,
+      enum: ['Point'],
+      default: 'Point'
+    },
+    coordinates: {
+      type: [Number],
+      default: undefined
+    }
   }
 }, {
   timestamps: true
 });
 
-module.exports = mongoose.models.Store || mongoose.model('Store', storeSchema);
+// Required for $near geospatial queries in /api/stores/nearby
+storeSchema.index({ location: '2dsphere' });
 
+module.exports = mongoose.models.Store || mongoose.model('Store', storeSchema);

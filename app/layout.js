@@ -1,15 +1,18 @@
 import './globals.css'
+import AIChatbot from '@/components/AIChatbot'
 
 export const metadata = {
-  title: 'Library Management System',
-  description: 'Multi-Store Library Management Marketplace',
+  title: 'LibraryHub — Multi-Store Library Management',
+  description: 'Discover, issue, and manage books across multiple local library stores — powered by AI.',
 }
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <AIChatbot />
+      </body>
     </html>
   )
 }
-
