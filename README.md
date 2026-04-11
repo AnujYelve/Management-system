@@ -438,11 +438,11 @@ The system uses HTML email templates with:
 
 ## 📄 License
 
-This project is created for educational purposes as a college minor project.
+This project is created for educational purposes as a college personal project.
 
 ## 👨‍💻 Author
 
-Built as a complete, production-ready library management system for college minor project submission.
+Built as a complete, production-ready library management system for college personal project submission.
 
 ---
 
