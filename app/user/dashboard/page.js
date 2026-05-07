@@ -434,6 +434,13 @@ function UserDashboardInner() {
       // Increment unread badge without a round-trip
       setUnreadCount((prev) => prev + 1);
 
+      // ── KEY FIX: if this notification is about a book return,
+      // immediately refresh the issue list so the status badge
+      // changes from ISSUED → RETURNED without any manual refresh.
+      if (payload.type === 'RETURN') {
+        fetchMyIssues();
+      }
+
       // Surface as a toast
       addToast('info', payload.message);
     };
@@ -443,6 +450,9 @@ function UserDashboardInner() {
   }, [on, addToast]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Realtime: store confirms return/issue → refresh my issues + books ─────
+  // NOTE: store_update is emitted to the STORE room, not the user room.
+  // The handler below is a safety net for cases where the user is also
+  // browsing in the same browser session as the store (e.g., admin testing).
   useEffect(() => {
     const handleStoreUpdate = (payload) => {
       if (payload.type === 'RETURN') {
@@ -457,6 +467,7 @@ function UserDashboardInner() {
     const off = on('store_update', handleStoreUpdate);
     return off;
   }, [on]); // eslint-disable-line react-hooks/exhaustive-deps
+
 
 
   const handleIssueBook = async () => {

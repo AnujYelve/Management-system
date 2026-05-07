@@ -167,8 +167,67 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
           </div>
+
+          <button
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 text-slate-600 hover:text-indigo-600 transition relative"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+            {!mobileMenuOpen && unreadCount > 0 && (
+              <span className="absolute top-1 right-1 h-3 w-3 bg-amber-500 rounded-full"></span>
+            )}
+          </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {mobileMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden border-t border-slate-200/50 bg-white shadow-lg overflow-hidden"
+          >
+            <div className="px-4 py-4 space-y-4">
+              <div className="flex items-center space-x-3 pb-3 border-b border-slate-100">
+                <div className="h-10 w-10 rounded-full bg-indigo-100 flex items-center justify-center">
+                  <User className="h-5 w-5 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="font-medium text-slate-900">{user.name}</p>
+                  <p className="text-sm text-slate-500">{user.role}</p>
+                </div>
+              </div>
+              
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push(getDashboardPath() || '/');
+                }}
+                className="flex items-center justify-between w-full text-slate-600 hover:text-indigo-600 transition py-2"
+              >
+                <div className="flex items-center space-x-2">
+                  <Bell className="h-5 w-5" />
+                  <span>Dashboard & Notifications</span>
+                </div>
+                {unreadCount > 0 && (
+                  <span className="bg-amber-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+              
+              <button
+                onClick={handleLogout}
+                className="flex items-center space-x-2 w-full text-red-600 hover:text-red-700 transition py-2 font-medium"
+              >
+                <LogOut className="h-5 w-5" />
+                <span>Logout</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 }
