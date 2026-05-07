@@ -7,11 +7,14 @@ import dynamic from 'next/dynamic';
 import {
   BookOpen, Search, Bell, Book, Store,
   CheckCircle, XCircle, Loader2, MapPin,
-  Sparkles, Navigation, Star, Globe
+  Sparkles, Navigation, Star, Globe, Zap, QrCode, WifiOff
 } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Modal from '@/components/Modal';
 import Toast from '@/components/Toast';
+import useSocket from '@/hooks/useSocket';
+import QRCodeDisplay from '@/components/QRCodeDisplay';
+import { cacheSet, cacheGet, CACHE_KEYS } from '@/lib/offlineCache';
 
 // Dynamically import MapView — prevents SSR / Leaflet window errors
 const MapView = dynamic(() => import('@/components/MapView'), { ssr: false });
@@ -238,6 +241,17 @@ function UserDashboardInner() {
   const [recommendations, setRecommendations] = useState([]);
   const [recoLoading, setRecoLoading] = useState(false);
   const [recoMode, setRecoMode]       = useState('');
+  const [liveIndicator, setLiveIndicator] = useState(false);
+
+  // QR modal
+  const [qrIssue, setQrIssue] = useState(null); // the issue whose QR is shown
+
+  // Offline state
+  const [isOffline, setIsOffline] = useState(false);
+  const [usingCache, setUsingCache] = useState(false);
+
+  // ── Socket.io: join user room once user._id is known ─────────────────────
+  const { on } = useSocket({ userId: user?._id?.toString() });
 
   const addToast = useCallback((type, message) => {
     const id = Date.now();
@@ -291,16 +305,35 @@ function UserDashboardInner() {
     try {
       const res = await fetch('/api/notifications', { credentials: 'include' });
       const data = await res.json();
-      if (res.ok) { setNotifications(data.notifications || []); setUnreadCount(data.unreadCount || 0); }
-    } catch (err) { console.error('Fetch notifs:', err); }
+      if (res.ok) {
+        const notifs = data.notifications || [];
+        setNotifications(notifs);
+        setUnreadCount(data.unreadCount || 0);
+        cacheSet(CACHE_KEYS.NOTIFICATIONS, notifs); // persist for offline
+        setUsingCache(false);
+      }
+    } catch (err) {
+      console.warn('[Offline] fetchNotifications failed, loading cache');
+      const cached = cacheGet(CACHE_KEYS.NOTIFICATIONS);
+      if (cached) { setNotifications(cached); setUsingCache(true); }
+    }
   };
 
   const fetchMyIssues = async () => {
     try {
       const res = await fetch('/api/user/my-issues', { credentials: 'include' });
       const data = await res.json();
-      if (res.ok) setMyIssues(data.issues || []);
-    } catch (err) { console.error('Fetch issues:', err); }
+      if (res.ok) {
+        const issues = data.issues || [];
+        setMyIssues(issues);
+        cacheSet(CACHE_KEYS.MY_ISSUES, issues); // persist for offline
+        setUsingCache(false);
+      }
+    } catch (err) {
+      console.warn('[Offline] fetchMyIssues failed, loading cache');
+      const cached = cacheGet(CACHE_KEYS.MY_ISSUES);
+      if (cached) { setMyIssues(cached); setUsingCache(true); }
+    }
   };
 
   const fetchRecommendations = async () => {
@@ -364,7 +397,68 @@ function UserDashboardInner() {
     if (activeTab === 'nearby' && !userLocation) requestLocation();
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Issue book ────────────────────────────────────────────────────────────
+  // ── Offline / Online detection ────────────────────────────────────────────
+  useEffect(() => {
+    const handleOffline = () => setIsOffline(true);
+    const handleOnline  = () => {
+      setIsOffline(false);
+      setUsingCache(false);
+      // Re-sync all data when connection is restored
+      fetchMyIssues();
+      fetchNotifications();
+      fetchBooks();
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online',  handleOnline);
+    // Set initial state
+    setIsOffline(!navigator.onLine);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online',  handleOnline);
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Realtime: incoming notification pushed from backend ───────────────────
+  useEffect(() => {
+    const handleNotification = (payload) => {
+      // Flash live indicator
+      setLiveIndicator(true);
+      setTimeout(() => setLiveIndicator(false), 2000);
+
+      // Optimistically prepend — guard against duplicates on rapid reconnect
+      setNotifications((prev) => {
+        if (prev.some((n) => n._id === payload._id)) return prev;
+        return [payload, ...prev];
+      });
+
+      // Increment unread badge without a round-trip
+      setUnreadCount((prev) => prev + 1);
+
+      // Surface as a toast
+      addToast('info', payload.message);
+    };
+
+    const off = on('notification', handleNotification);
+    return off;
+  }, [on, addToast]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Realtime: store confirms return/issue → refresh my issues + books ─────
+  useEffect(() => {
+    const handleStoreUpdate = (payload) => {
+      if (payload.type === 'RETURN') {
+        fetchMyIssues();
+      }
+      if (payload.type === 'ISSUE') {
+        fetchMyIssues();
+        fetchBooks(); // available copies may have changed
+      }
+    };
+
+    const off = on('store_update', handleStoreUpdate);
+    return off;
+  }, [on]); // eslint-disable-line react-hooks/exhaustive-deps
+
+
   const handleIssueBook = async () => {
     if (!selectedBook || !issueDays) return;
     try {
@@ -428,6 +522,15 @@ function UserDashboardInner() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
+
+      {/* Live indicator */}
+      {liveIndicator && (
+        <div className="fixed top-20 right-4 z-50 flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-full shadow-lg animate-pulse">
+          <Zap className="h-4 w-4" />
+          New notification
+        </div>
+      )}
+
       <div className="pt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
@@ -688,6 +791,18 @@ function UserDashboardInner() {
               {/* ── My Issues ─────────────────────────────────────────────── */}
               {activeTab === 'my-issues' && (
                 <div>
+                  {/* Offline / stale-cache banner */}
+                  {(isOffline || usingCache) && (
+                    <div className="flex items-center gap-2 mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
+                      <WifiOff className="h-4 w-4 flex-shrink-0" />
+                      <span>
+                        {isOffline
+                          ? 'You are offline — showing cached data. Connect to the internet to refresh.'
+                          : 'Showing cached data. Pull down to refresh.'}
+                      </span>
+                    </div>
+                  )}
+
                   {myIssues.length === 0 ? (
                     <div className="text-center py-16">
                       <Book className="h-16 w-16 text-slate-300 mx-auto mb-4" />
@@ -695,34 +810,54 @@ function UserDashboardInner() {
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {myIssues.map((issue) => (
-                        <motion.div key={issue._id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
-                          className="bg-slate-50 rounded-xl p-5 border border-slate-200">
-                          <div className="flex items-start justify-between mb-3">
-                            <div>
-                              <h3 className="font-semibold text-slate-900">{issue.bookId?.title}</h3>
-                              <p className="text-sm text-slate-600">By {issue.bookId?.author}</p>
-                              <p className="text-xs text-slate-500 mt-0.5">{issue.storeId?.storeName}</p>
+                      {myIssues.map((issue) => {
+                        const isActive = issue.status === 'ISSUED' || issue.status === 'OVERDUE';
+                        return (
+                          <motion.div key={issue._id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }}
+                            className="bg-slate-50 rounded-xl p-5 border border-slate-200">
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h3 className="font-semibold text-slate-900">{issue.bookId?.title}</h3>
+                                <p className="text-sm text-slate-600">By {issue.bookId?.author}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{issue.storeId?.storeName}</p>
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                {getStatusBadge(issue.status)}
+                                {/* QR button — only for active issues */}
+                                {isActive && (
+                                  <button
+                                    onClick={() => setQrIssue(issue)}
+                                    className="flex items-center gap-1 text-xs px-2.5 py-1 bg-indigo-100
+                                      text-indigo-700 rounded-lg hover:bg-indigo-200 transition"
+                                  >
+                                    <QrCode className="h-3 w-3" /> View QR
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                            {getStatusBadge(issue.status)}
-                          </div>
-                          <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-200 text-sm">
-                            <div>
-                              <p className="text-xs text-slate-400 mb-1">Issued</p>
-                              <p className="font-medium">{new Date(issue.issueDate).toLocaleDateString()}</p>
+                            <div className="grid grid-cols-2 gap-4 pt-3 border-t border-slate-200 text-sm">
+                              <div>
+                                <p className="text-xs text-slate-400 mb-1">Issued</p>
+                                <p className="font-medium">{new Date(issue.issueDate).toLocaleDateString()}</p>
+                              </div>
+                              <div>
+                                <p className="text-xs text-slate-400 mb-1">Due</p>
+                                <p className={`font-medium ${
+                                  isActive && new Date(issue.dueDate) < new Date()
+                                    ? 'text-red-600' : ''
+                                }`}>
+                                  {new Date(issue.dueDate).toLocaleDateString()}
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-xs text-slate-400 mb-1">Due</p>
-                              <p className="font-medium">{new Date(issue.dueDate).toLocaleDateString()}</p>
-                            </div>
-                          </div>
-                          {issue.fine > 0 && (
-                            <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg">
-                              <p className="text-sm font-semibold text-red-700">Fine: ₹{issue.fine}</p>
-                            </div>
-                          )}
-                        </motion.div>
-                      ))}
+                            {issue.fine > 0 && (
+                              <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                                <p className="text-sm font-semibold text-red-700">Fine: ₹{issue.fine}</p>
+                              </div>
+                            )}
+                          </motion.div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -789,6 +924,46 @@ function UserDashboardInner() {
       </Modal>
 
       <Toast toasts={toasts} removeToast={removeToast} />
+
+      {/* QR Code Modal */}
+      <Modal
+        isOpen={!!qrIssue}
+        onClose={() => setQrIssue(null)}
+        title="Book Return QR Code"
+      >
+        {qrIssue && (
+          <div className="flex flex-col items-center gap-4 py-2">
+            <div className="text-center">
+              <p className="font-semibold text-slate-900">{qrIssue.bookId?.title}</p>
+              <p className="text-sm text-slate-500">By {qrIssue.bookId?.author}</p>
+              <p className="text-xs text-slate-400 mt-1">{qrIssue.storeId?.storeName}</p>
+            </div>
+
+            <QRCodeDisplay
+              value={qrIssue._id}
+              size={220}
+              label={qrIssue.bookId?.title || 'book'}
+            />
+
+            <div className="w-full p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-500 text-center">
+              Due: <span className="font-medium text-slate-700">
+                {new Date(qrIssue.dueDate).toLocaleDateString('en-IN', {
+                  day: 'numeric', month: 'long', year: 'numeric'
+                })}
+              </span>
+            </div>
+
+            <button
+              onClick={() => setQrIssue(null)}
+              className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-slate-600
+                hover:bg-slate-50 transition text-sm font-medium"
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
+

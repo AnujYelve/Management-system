@@ -1,25 +1,23 @@
-export const dynamic = "force-dynamic";
+/**
+ * GET /api/cron
+ *
+ * Entry point for the daily scheduled job.
+ * Triggered at 09:00 UTC by Vercel Cron (vercel.json).
+ * Can also be hit manually for testing.
+ *
+ * No node-cron, no persistent process — stateless by design.
+ */
+
+export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
-import { processDailyNotifications, initializeCron } from '@/lib/cron.js';
-
-// Initialize cron on module load (only once)
-let cronInitialized = false;
-
-if (!cronInitialized) {
-  initializeCron();
-  cronInitialized = true;
-}
+import { processDailyNotifications } from '@/lib/cron.js';
 
 export async function GET(request) {
   try {
-    // Manual trigger for testing
     await processDailyNotifications();
-    
-    return NextResponse.json({
-      message: 'Cron job executed successfully'
-    });
+    return NextResponse.json({ message: 'Cron job executed successfully' });
   } catch (error) {
-    console.error('Cron job error:', error);
+    console.error('[Cron Route] Error:', error);
     return NextResponse.json(
       { error: 'Cron job failed', details: error.message },
       { status: 500 }
@@ -27,20 +25,7 @@ export async function GET(request) {
   }
 }
 
+// POST kept for manual curl triggers during development
 export async function POST(request) {
-  try {
-    // Manual trigger
-    await processDailyNotifications();
-    
-    return NextResponse.json({
-      message: 'Cron job executed successfully'
-    });
-  } catch (error) {
-    console.error('Cron job error:', error);
-    return NextResponse.json(
-      { error: 'Cron job failed', details: error.message },
-      { status: 500 }
-    );
-  }
+  return GET(request);
 }
-

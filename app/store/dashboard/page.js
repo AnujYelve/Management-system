@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Store, BookOpen, Clock, MapPin, Plus, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Store, BookOpen, Clock, MapPin, Plus, Loader2, CheckCircle, XCircle, Zap, ScanLine } from 'lucide-react';
 import Navbar from '@/components/Navbar';
 import Modal from '@/components/Modal';
 import Toast from '@/components/Toast';
+import useSocket from '@/hooks/useSocket';
+import QRScanner from '@/components/QRScanner';
 
 export default function StoreDashboard() {
   const router = useRouter();
@@ -15,6 +17,10 @@ export default function StoreDashboard() {
   const [issues, setIssues] = useState([]);
   const [activeTab, setActiveTab] = useState('books');
   const [loading, setLoading] = useState(true);
+  const [liveIndicator, setLiveIndicator] = useState(false);
+  // QR scanner state
+  const [qrScanResult, setQrScanResult] = useState(null);  // { success, message, issue }
+  const [qrProcessing, setQrProcessing] = useState(false);
   const [showStoreForm, setShowStoreForm] = useState(false);
   const [showBookForm, setShowBookForm] = useState(false);
   const [showIssueModal, setShowIssueModal] = useState(false);
@@ -31,16 +37,44 @@ export default function StoreDashboard() {
   const [bookImageFile, setBookImageFile] = useState(null);
   const [toasts, setToasts] = useState([]);
 
+  // ── Socket.io: join store room once the store object is loaded ────────────
+  // storeId is undefined until fetchStore() resolves; useSocket is safe with undefined.
+  const { on } = useSocket({ storeId: store?._id?.toString() });
+
   useEffect(() => {
     fetchStore();
     fetchBooks();
     fetchIssues();
   }, []);
 
-  const addToast = (type, message) => {
+  // ── Realtime: listen for store_update events ──────────────────────────────
+  useEffect(() => {
+    const handleStoreUpdate = (payload) => {
+      // Flash the live indicator
+      setLiveIndicator(true);
+      setTimeout(() => setLiveIndicator(false), 2000);
+
+      if (payload.type === 'ISSUE') {
+        addToast('info', `📚 New book request received!`);
+        fetchIssues();
+      } else if (payload.type === 'RETURN') {
+        addToast('success', `✅ A book has been returned.`);
+        fetchIssues();
+        fetchBooks();
+      } else if (payload.type === 'FINE') {
+        // Overdue update from cron — refresh issues to get updated fine amounts
+        fetchIssues();
+      }
+    };
+
+    const off = on('store_update', handleStoreUpdate);
+    return off;
+  }, [on]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const addToast = useCallback((type, message) => {
     const id = Date.now();
-    setToasts([...toasts, { id, type, message, autoClose: true, duration: 3000 }]);
-  };
+    setToasts((prev) => [...prev, { id, type, message, autoClose: true, duration: 4000 }]);
+  }, []);
 
   const removeToast = (id) => {
     setToasts(toasts.filter(t => t.id !== id));
@@ -197,7 +231,15 @@ export default function StoreDashboard() {
   return (
     <div className="min-h-screen bg-slate-50">
       <Navbar />
-      
+
+      {/* Live indicator — pulses when a realtime event arrives */}
+      {liveIndicator && (
+        <div className="fixed top-20 right-4 z-50 flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-full shadow-lg animate-pulse">
+          <Zap className="h-4 w-4" />
+          Live update received
+        </div>
+      )}
+
       <div className="pt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {!store && showStoreForm ? (
@@ -338,8 +380,9 @@ export default function StoreDashboard() {
                 <div className="border-b border-slate-200">
                   <nav className="flex space-x-6 px-6">
                     {[
-                      { id: 'books', label: 'Books', icon: BookOpen },
-                      { id: 'issues', label: 'Issue Requests', icon: Clock }
+                      { id: 'books',   label: 'Books',          icon: BookOpen  },
+                      { id: 'issues',  label: 'Issue Requests', icon: Clock     },
+                      { id: 'qr-scan', label: 'QR Scanner',     icon: ScanLine  },
                     ].map((tab) => {
                       const Icon = tab.icon;
                       return (
@@ -620,6 +663,84 @@ export default function StoreDashboard() {
                             </motion.div>
                           ))}
                         </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── QR Scanner tab ──────────────────────────────────────── */}
+                  {activeTab === 'qr-scan' && (
+                    <div className="max-w-md mx-auto">
+                      <div className="mb-6">
+                        <h2 className="text-2xl font-bold text-slate-900">QR Return Scanner</h2>
+                        <p className="text-slate-600 mt-1">Scan a user’s QR code to instantly process a book return.</p>
+                      </div>
+
+                      <div className="bg-white rounded-2xl border border-slate-200 p-6">
+                        <QRScanner
+                          onScan={async (issueId) => {
+                            if (qrProcessing) return;
+                            setQrProcessing(true);
+                            setQrScanResult(null);
+                            try {
+                              const res = await fetch('/api/store/qr-return', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ issueId }),
+                              });
+                              const data = await res.json();
+                              if (res.ok) {
+                                setQrScanResult({ success: true, message: data.message, issue: data.issue });
+                                addToast('success', `✅ "${data.issue?.bookTitle}" returned by ${data.issue?.userName}`);
+                                fetchIssues();
+                                fetchBooks();
+                              } else {
+                                setQrScanResult({ success: false, message: data.error });
+                                addToast('error', data.error || 'QR return failed');
+                              }
+                            } catch (err) {
+                              setQrScanResult({ success: false, message: 'Network error. Please try again.' });
+                              addToast('error', 'Network error during QR return');
+                            } finally {
+                              setQrProcessing(false);
+                            }
+                          }}
+                          onClose={() => setActiveTab('issues')}
+                        />
+                      </div>
+
+                      {/* Scan result feedback */}
+                      {qrProcessing && (
+                        <div className="mt-4 flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
+                          <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
+                          Processing QR return…
+                        </div>
+                      )}
+
+                      {qrScanResult && !qrProcessing && (
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                          className={`mt-4 p-4 rounded-xl border text-sm ${
+                            qrScanResult.success
+                              ? 'bg-green-50 border-green-200 text-green-800'
+                              : 'bg-red-50 border-red-200 text-red-800'
+                          }`}
+                        >
+                          <div className="flex items-start gap-2">
+                            {qrScanResult.success
+                              ? <CheckCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                              : <XCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />}
+                            <div>
+                              <p className="font-medium">{qrScanResult.message}</p>
+                              {qrScanResult.success && qrScanResult.issue && (
+                                <p className="text-xs mt-1 opacity-80">
+                                  Book: {qrScanResult.issue.bookTitle} — User: {qrScanResult.issue.userName}
+                                  {qrScanResult.issue.fine > 0 && ` — Fine: ₹${qrScanResult.issue.fine}`}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
                       )}
                     </div>
                   )}

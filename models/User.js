@@ -32,7 +32,15 @@ const userSchema = new mongoose.Schema({
   isBlocked: {
     type: Boolean,
     default: false
-  }
+  },
+  // Tracks categories of books returned by the user.
+  // Used by /api/books/recommendations to build personalised suggestions.
+  readingHistory: [
+    {
+      category: { type: String, required: true, trim: true },
+      count:    { type: Number, default: 1 }
+    }
+  ]
 }, {
   timestamps: true
 });
