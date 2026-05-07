@@ -82,6 +82,9 @@ export default function useSocket({ userId, storeId } = {}) {
     if (!socket) return;           // SSR guard
     if (!userId && !storeId) return;
 
+    // Reset so we always re-join when userId/storeId changes
+    joinedRef.current = false;
+
     const doJoin = () => {
       if (joinedRef.current) return;
       socket.emit('join', { userId, storeId });
@@ -102,6 +105,7 @@ export default function useSocket({ userId, storeId } = {}) {
     socket.on('connect', onReconnect);
 
     return () => {
+      // Always clean up the reconnect listener for this specific userId/storeId
       socket.off('connect', onReconnect);
     };
   }, [userId, storeId]); // eslint-disable-line react-hooks/exhaustive-deps
