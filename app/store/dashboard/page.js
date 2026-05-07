@@ -37,7 +37,7 @@ export default function StoreDashboard() {
   const [bookImageFile, setBookImageFile] = useState(null);
   const [toasts, setToasts] = useState([]);
 
-  // ── Socket.io: join store room once the store object is loaded ────────────
+  // ΓöÇΓöÇ Socket.io: join store room once the store object is loaded ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   // storeId is undefined until fetchStore() resolves; useSocket is safe with undefined.
   const { on } = useSocket({ storeId: store?._id?.toString() });
 
@@ -47,7 +47,7 @@ export default function StoreDashboard() {
     fetchIssues();
   }, []);
 
-  // ── Realtime: listen for store_update events ──────────────────────────────
+  // ΓöÇΓöÇ Realtime: listen for store_update events ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
   useEffect(() => {
     const handleStoreUpdate = (payload) => {
       // Flash the live indicator
@@ -55,14 +55,14 @@ export default function StoreDashboard() {
       setTimeout(() => setLiveIndicator(false), 2000);
 
       if (payload.type === 'ISSUE') {
-        addToast('info', `📚 New book request received!`);
+        addToast('info', `≡ƒôÜ New book request received!`);
         fetchIssues();
       } else if (payload.type === 'RETURN') {
-        addToast('success', `✅ A book has been returned.`);
+        addToast('success', `Γ£à A book has been returned.`);
         fetchIssues();
         fetchBooks();
       } else if (payload.type === 'FINE') {
-        // Overdue update from cron — refresh issues to get updated fine amounts
+        // Overdue update from cron ΓÇö refresh issues to get updated fine amounts
         fetchIssues();
       }
     };
@@ -232,7 +232,7 @@ export default function StoreDashboard() {
     <div className="min-h-screen bg-slate-50">
       <Navbar />
 
-      {/* Live indicator — pulses when a realtime event arrives */}
+      {/* Live indicator ΓÇö pulses when a realtime event arrives */}
       {liveIndicator && (
         <div className="fixed top-20 right-4 z-50 flex items-center gap-2 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-full shadow-lg animate-pulse">
           <Zap className="h-4 w-4" />
@@ -404,7 +404,7 @@ export default function StoreDashboard() {
                 </div>
 
                 <div className="p-6">
-                  {activeTab === 'books' ? (
+                  {activeTab === 'books' && (
                     <div>
                       <div className="flex items-center justify-between mb-6">
                         <div>
@@ -566,7 +566,8 @@ export default function StoreDashboard() {
                         </div>
                       )}
                     </div>
-                  ) : (
+                  )}
+                  {activeTab === 'issues' && (
                     <div>
                       <div className="mb-6">
                         <h2 className="text-2xl font-bold text-slate-900">Issue requests</h2>
@@ -622,7 +623,7 @@ export default function StoreDashboard() {
                               </div>
                               {issue.fine > 0 && (
                                 <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-                                  <p className="text-sm font-semibold text-red-800">Fine: ₹{issue.fine}</p>
+                                  <p className="text-sm font-semibold text-red-800">Fine: Γé╣{issue.fine}</p>
                                 </div>
                               )}
                               <div className="flex gap-3">
@@ -667,12 +668,12 @@ export default function StoreDashboard() {
                     </div>
                   )}
 
-                  {/* ── QR Scanner tab ──────────────────────────────────────── */}
+                  {/* ΓöÇΓöÇ QR Scanner tab ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */}
                   {activeTab === 'qr-scan' && (
                     <div className="max-w-md mx-auto">
                       <div className="mb-6">
                         <h2 className="text-2xl font-bold text-slate-900">QR Return Scanner</h2>
-                        <p className="text-slate-600 mt-1">Scan a user’s QR code to instantly process a book return.</p>
+                        <p className="text-slate-600 mt-1">Scan a userΓÇÖs QR code to instantly process a book return.</p>
                       </div>
 
                       <div className="bg-white rounded-2xl border border-slate-200 p-6">
@@ -691,7 +692,7 @@ export default function StoreDashboard() {
                               const data = await res.json();
                               if (res.ok) {
                                 setQrScanResult({ success: true, message: data.message, issue: data.issue });
-                                addToast('success', `✅ "${data.issue?.bookTitle}" returned by ${data.issue?.userName}`);
+                                addToast('success', `Γ£à "${data.issue?.bookTitle}" returned by ${data.issue?.userName}`);
                                 fetchIssues();
                                 fetchBooks();
                               } else {
@@ -713,7 +714,7 @@ export default function StoreDashboard() {
                       {qrProcessing && (
                         <div className="mt-4 flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-xl text-blue-700 text-sm">
                           <Loader2 className="h-4 w-4 animate-spin flex-shrink-0" />
-                          Processing QR return…
+                          Processing QR returnΓÇª
                         </div>
                       )}
 
@@ -734,8 +735,8 @@ export default function StoreDashboard() {
                               <p className="font-medium">{qrScanResult.message}</p>
                               {qrScanResult.success && qrScanResult.issue && (
                                 <p className="text-xs mt-1 opacity-80">
-                                  Book: {qrScanResult.issue.bookTitle} — User: {qrScanResult.issue.userName}
-                                  {qrScanResult.issue.fine > 0 && ` — Fine: ₹${qrScanResult.issue.fine}`}
+                                  Book: {qrScanResult.issue.bookTitle} ΓÇö User: {qrScanResult.issue.userName}
+                                  {qrScanResult.issue.fine > 0 && ` ΓÇö Fine: Γé╣${qrScanResult.issue.fine}`}
                                 </p>
                               )}
                             </div>
